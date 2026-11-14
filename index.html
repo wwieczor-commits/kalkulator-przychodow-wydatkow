@@ -132,6 +132,18 @@ input:focus-visible, select:focus-visible, button:focus-visible {
   font-size: 1.2rem; line-height: 1; cursor: pointer;
 }
 .del:hover { color: var(--neg); border-color: var(--neg); }
+.drag {
+  flex: none; width: 22px; height: 32px; padding: 0; border: 0; border-radius: 6px;
+  background: transparent; color: var(--muted); font-size: 1.25rem; line-height: 1;
+  cursor: grab; touch-action: none; -webkit-user-select: none; user-select: none;
+}
+.drag:hover { color: var(--fg); }
+.row.dragging {
+  position: relative; z-index: 5; background: var(--surface); border-radius: 8px;
+  box-shadow: 0 6px 18px rgba(0,0,0,0.18); outline: 2px solid var(--tone, var(--accent));
+}
+.row.dragging .drag { cursor: grabbing; color: var(--fg); }
+body.is-dragging { -webkit-user-select: none; user-select: none; cursor: grabbing; }
 
 .btn {
   border: 1px solid var(--line); background: var(--surface); border-radius: 8px;
@@ -225,7 +237,7 @@ input[type="text"], select { padding: 6px 8px; border-radius: 6px; }
   input[type="text"], select { font-size: 16px; }
 }
 @media (min-width: 640px) {
-  .row { display: grid; grid-template-columns: 20px minmax(0,1fr) minmax(0,1.6fr) 32px; align-items: center; gap: 6px; border-bottom: 0; padding-bottom: 0; }
+  .row { display: grid; grid-template-columns: 22px 20px minmax(0,1fr) minmax(0,1.6fr) 32px; align-items: center; gap: 6px; border-bottom: 0; padding-bottom: 0; }
   .row-top { display: contents; }
   .row .del, .row .del-sp { order: 3; }
   .row label.f > span { display: none; }
@@ -277,7 +289,7 @@ input[type="text"], select { padding: 6px 8px; border-radius: 6px; }
       <span class="head-sum" id="incHead"></span>
     </div>
     <div class="row colhead" aria-hidden="true">
-      <div class="row-top"><span></span><span>Nazwa</span><span class="del-sp"></span></div>
+      <div class="row-top"><span></span><span></span><span>Nazwa</span><span class="del-sp"></span></div>
       <div class="nums"><span>Netto</span><span>VAT</span><span>Brutto</span></div>
     </div>
     <div class="rows" id="incRows"></div>
@@ -290,7 +302,7 @@ input[type="text"], select { padding: 6px 8px; border-radius: 6px; }
       <span class="head-sum" id="expHead"></span>
     </div>
     <div class="row colhead" aria-hidden="true">
-      <div class="row-top"><span></span><span>Nazwa</span><span class="del-sp"></span></div>
+      <div class="row-top"><span></span><span></span><span>Nazwa</span><span class="del-sp"></span></div>
       <div class="nums"><span>Netto</span><span>VAT</span><span>Brutto</span></div>
     </div>
     <div class="rows" id="expRows"></div>
@@ -426,7 +438,12 @@ input[type="text"], select { padding: 6px 8px; border-radius: 6px; }
     chk.title = 'Bierz pod uwagę w podsumowaniu';
     chk.setAttribute('aria-label', 'Bierz pod uwagę w podsumowaniu');
     row.classList.toggle('off', it.on === false);
-    top.appendChild(chk); top.appendChild(name); top.appendChild(del);
+    var drag = document.createElement('button');
+    drag.type = 'button'; drag.className = 'drag'; drag.dataset.f = 'drag';
+    drag.textContent = '≡';
+    drag.title = 'Przeciągnij, aby zmienić kolejność (lub strzałki ↑ ↓)';
+    drag.setAttribute('aria-label', 'Zmień kolejność: przeciągnij lub użyj strzałek w górę i w dół');
+    top.appendChild(drag); top.appendChild(chk); top.appendChild(name); top.appendChild(del);
 
     var nums = document.createElement('div');
     nums.className = 'nums';
@@ -550,6 +567,68 @@ input[type="text"], select { padding: 6px 8px; border-radius: 6px; }
       state[kind].splice(hit.idx, 1);
       hit.row.remove();
       updateSummary(); save();
+    });
+
+    // Zmiana kolejności: przeciąganie za uchwyt (mysz i dotyk) albo strzałki na klawiaturze
+    function syncOrder() {
+      var ids = Array.prototype.map.call(box.children, function (r) { return Number(r.dataset.id); });
+      state[kind].sort(function (a, b) { return ids.indexOf(a.id) - ids.indexOf(b.id); });
+      save();
+    }
+
+    box.addEventListener('pointerdown', function (ev) {
+      var h = ev.target.closest('[data-f="drag"]');
+      if (!h || ev.button > 0) return;
+      var row = h.closest('.row');
+      ev.preventDefault();
+      try { h.setPointerCapture(ev.pointerId); } catch (e) {}
+      row.classList.add('dragging');
+      document.body.classList.add('is-dragging');
+      var lastY = ev.clientY, timer = null;
+
+      function place(y) {
+        var prev, next, r;
+        while ((prev = row.previousElementSibling)) {
+          r = prev.getBoundingClientRect();
+          if (y < r.top + r.height / 2) box.insertBefore(row, prev); else break;
+        }
+        while ((next = row.nextElementSibling)) {
+          r = next.getBoundingClientRect();
+          if (y > r.top + r.height / 2) box.insertBefore(next, row); else break;
+        }
+      }
+      function autoScroll() {
+        var edge = 70, bottom = window.innerHeight - 110, d = 0;
+        if (lastY < edge) d = -12; else if (lastY > bottom) d = 12;
+        if (d) { window.scrollBy(0, d); place(lastY); }
+      }
+      function move(e) { lastY = e.clientY; place(lastY); }
+      function up() {
+        clearInterval(timer);
+        h.removeEventListener('pointermove', move);
+        h.removeEventListener('pointerup', up);
+        h.removeEventListener('pointercancel', up);
+        row.classList.remove('dragging');
+        document.body.classList.remove('is-dragging');
+        syncOrder();
+      }
+      timer = setInterval(autoScroll, 30);
+      h.addEventListener('pointermove', move);
+      h.addEventListener('pointerup', up);
+      h.addEventListener('pointercancel', up);
+    });
+
+    box.addEventListener('keydown', function (ev) {
+      if (ev.target.dataset.f !== 'drag') return;
+      var row = ev.target.closest('.row');
+      if (ev.key === 'ArrowUp' && row.previousElementSibling) {
+        box.insertBefore(row, row.previousElementSibling);
+      } else if (ev.key === 'ArrowDown' && row.nextElementSibling) {
+        box.insertBefore(row.nextElementSibling, row);
+      } else return;
+      ev.preventDefault();
+      ev.target.focus();
+      syncOrder();
     });
 
     $(kind + 'Add').addEventListener('click', function () {
