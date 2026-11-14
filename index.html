@@ -107,11 +107,14 @@ input:focus-visible, select:focus-visible, button:focus-visible {
   outline: 2px solid var(--accent); outline-offset: 1px;
 }
 
-.capital { flex-direction: row; align-items: center; justify-content: space-between; flex-wrap: wrap; }
-.capital .cap-text { display: flex; flex-direction: column; gap: 2px; }
+.capital .panel-head .head-sum { color: var(--fg); }
+.caps { display: grid; grid-template-columns: minmax(0,1fr); gap: 10px; }
+.cap-box { display: flex; flex-direction: column; gap: 4px; min-width: 0; }
 .capital .cap-title { font-family: var(--font-display); font-weight: 600; font-size: 1.15rem; }
-.capital .cap-field { display: flex; align-items: center; gap: 8px; flex: 1 1 180px; max-width: 260px; }
+.capital .cap-field { display: flex; align-items: center; gap: 8px; }
 .capital input { font-size: 1.2rem; font-weight: 600; }
+.caps .cap-label { text-transform: none; letter-spacing: 0; font-size: 0.82rem; }
+@media (min-width: 640px) { .caps { grid-template-columns: repeat(3, minmax(0,1fr)); } }
 .unit { color: var(--muted); font-weight: 500; }
 
 .rows { display: flex; flex-direction: column; gap: 10px; }
@@ -272,13 +275,32 @@ input[type="text"], select { padding: 6px 8px; border-radius: 6px; }
   </div>
 
   <section class="panel capital" aria-labelledby="capTitle">
-    <div class="cap-text">
-      <span class="cap-title" id="capTitle">Kapitał początkowy</span>
-      <span class="cap-label">Stan na start</span>
+    <div class="panel-head">
+      <h2 class="cap-title" id="capTitle">Stan na start</h2>
+      <span class="head-sum" id="capHead"></span>
     </div>
-    <div class="cap-field">
-      <input class="num" type="text" inputmode="decimal" id="capital" aria-labelledby="capTitle" placeholder="0,00">
-      <span class="unit">zł</span>
+    <div class="caps">
+      <div class="cap-box">
+        <span class="cap-label" id="capL">Kapitał początkowy (brutto)</span>
+        <div class="cap-field">
+          <input class="num" type="text" inputmode="decimal" id="capital" data-k="capital" aria-labelledby="capL" placeholder="0,00">
+          <span class="unit">zł</span>
+        </div>
+      </div>
+      <div class="cap-box">
+        <span class="cap-label" id="mbfL">mBank Firma (brutto)</span>
+        <div class="cap-field">
+          <input class="num" type="text" inputmode="decimal" id="mbf" data-k="mbf" aria-labelledby="mbfL" placeholder="0,00">
+          <span class="unit">zł</span>
+        </div>
+      </div>
+      <div class="cap-box">
+        <span class="cap-label" id="mbpL">mBank Prywatne (brutto)</span>
+        <div class="cap-field">
+          <input class="num" type="text" inputmode="decimal" id="mbp" data-k="mbp" aria-labelledby="mbpL" placeholder="0,00">
+          <span class="unit">zł</span>
+        </div>
+      </div>
     </div>
   </section>
 
@@ -313,7 +335,7 @@ input[type="text"], select { padding: 6px 8px; border-radius: 6px; }
   <section class="panel summary" aria-labelledby="sumTitle">
     <h2 id="sumTitle">Podsumowanie</h2>
     <div class="sum-line">
-      <span class="lbl">Kapitał początkowy</span>
+      <span class="lbl">Stan na start<small id="sCapSub"></small></span>
       <span class="val" id="sCap"></span>
     </div>
     <div class="sum-line pos">
@@ -347,6 +369,7 @@ input[type="text"], select { padding: 6px 8px; border-radius: 6px; }
 (function () {
   var KEY = 'kalkulator-pw-v1';
   var VATS = [23, 8, 5, 0];
+  var CAPS = ['capital', 'mbf', 'mbp'];
   var PLN = new Intl.NumberFormat('pl-PL', { style: 'currency', currency: 'PLN' });
   var $ = function (id) { return document.getElementById(id); };
 
@@ -387,7 +410,7 @@ input[type="text"], select { padding: 6px 8px; border-radius: 6px; }
 
   function sample() {
     return {
-      sample: true, capital: 10000, seq: 5,
+      sample: true, capital: 10000, mbf: 0, mbp: 0, seq: 5,
       inc: [
         { id: 1, name: 'Faktura za usługę', net: 5000, vat: 23, gross: 6150 },
         { id: 2, name: 'Sprzedaż towaru', net: 1200, vat: 23, gross: 1476 }
@@ -399,14 +422,17 @@ input[type="text"], select { padding: 6px 8px; border-radius: 6px; }
     };
   }
   function empty() {
-    return { sample: false, capital: 0, seq: 3,
+    return { sample: false, capital: 0, mbf: 0, mbp: 0, seq: 3,
       inc: [{ id: 1, name: '', net: 0, vat: 23, gross: 0 }],
       exp: [{ id: 2, name: '', net: 0, vat: 23, gross: 0 }] };
   }
   function load() {
     try {
       var s = JSON.parse(localStorage.getItem(KEY));
-      if (s && Array.isArray(s.inc) && Array.isArray(s.exp)) return s;
+      if (s && Array.isArray(s.inc) && Array.isArray(s.exp)) {
+        s.capital = s.capital || 0; s.mbf = s.mbf || 0; s.mbp = s.mbp || 0;
+        return s;
+      }
     } catch (e) {}
     return null;
   }
@@ -492,10 +518,13 @@ input[type="text"], select { padding: 6px 8px; border-radius: 6px; }
 
   function updateSummary() {
     var i = sums(state.inc), e = sums(state.exp);
-    var total = r2(state.capital + i.gross - e.gross);
+    var start = r2(state.capital + state.mbf + state.mbp);
+    var total = r2(start + i.gross - e.gross);
+    $('capHead').textContent = 'razem ' + PLN.format(start);
+    $('sCapSub').textContent = 'kapitał ' + PLN.format(state.capital) + ' · mBank Firma ' + PLN.format(state.mbf) + ' · mBank Prywatne ' + PLN.format(state.mbp);
     $('incHead').textContent = 'brutto ' + PLN.format(i.gross);
     $('expHead').textContent = 'brutto ' + PLN.format(e.gross);
-    $('sCap').textContent = PLN.format(state.capital);
+    $('sCap').textContent = PLN.format(start);
     $('sInc').textContent = '+ ' + PLN.format(i.gross);
     $('sExp').textContent = '− ' + PLN.format(e.gross);
     $('sIncSub').textContent = 'netto ' + PLN.format(i.net) + ' · VAT ' + PLN.format(i.vat);
@@ -642,18 +671,20 @@ input[type="text"], select { padding: 6px 8px; border-radius: 6px; }
   }
 
   function renderAll() {
-    $('capital').value = fmtIn(state.capital);
+    CAPS.forEach(function (k) { $(k).value = fmtIn(state[k]); });
     renderList('inc'); renderList('exp');
     updateSummary();
   }
 
-  $('capital').addEventListener('input', function (ev) {
-    live(ev.target);
-    state.capital = r2(parse(ev.target.value));
-    updateSummary(); save();
-  });
-  $('capital').addEventListener('change', function (ev) {
-    ev.target.value = fmtIn(state.capital);
+  CAPS.forEach(function (k) {
+    $(k).addEventListener('input', function (ev) {
+      live(ev.target);
+      state[k] = r2(parse(ev.target.value));
+      updateSummary(); save();
+    });
+    $(k).addEventListener('change', function (ev) {
+      ev.target.value = fmtIn(state[k]);
+    });
   });
 
   function reset() { state = empty(); save(); renderAll(); }

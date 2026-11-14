@@ -1,6 +1,6 @@
 # Kalkulator przychodów i wydatków
 
-Prosty kalkulator netto/brutto: kapitał początkowy, lista przychodów i wydatków, podsumowanie sum brutto i stan końcowy.
+Prosty kalkulator netto/brutto: stan na start (kapitał początkowy, mBank Firma, mBank Prywatne), lista przychodów i wydatków, podsumowanie sum brutto i stan końcowy.
 
 - wpisujesz netto albo brutto, drugie pole przelicza się według stawki VAT (23, 8, 5, 0%)
 - każdą pozycję można odznaczyć, żeby nie liczyła się do sumy
